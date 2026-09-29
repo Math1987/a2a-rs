@@ -101,6 +101,10 @@ and `slimrpc://org/demo/echo`.
 
 ## Local End-To-End Example
 
+This example requires the gateway connection fixes in
+[#312](https://github.com/a2aproject/a2a-rs/pull/312). Ensure those fixes are
+present in your checkout when building the plugin.
+
 Run the following commands from the workspace root. Use three terminals:
 one for the gateway, one for the echo agent, and the build shell for the CLI.
 The example uses the published SLIM gateway image `2.3.0` with this workspace's
@@ -186,9 +190,9 @@ cargo test -p a2acli-transport-slimrpc --release --locked
 ```
 
 The [CLI plugin interop workflow](../.github/workflows/cli-plugin-interop.yml)
-checks discovery with the real Go CLI, verifies the missing-configuration
-startup error, and runs the same gateway and echo agent to check unary and
-streaming responses.
+checks discovery with the real Go CLI and verifies the missing-configuration
+startup error. Run the local example above to check unary and streaming
+responses manually; the workflow does not start a gateway or echo agent.
 
 ## Workspace
 

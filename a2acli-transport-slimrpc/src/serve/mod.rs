@@ -20,20 +20,18 @@ const TOKEN_HEADER: &str = "a2a-plugin-token";
 //
 // Example:
 //   client:
-//     endpoint: "http://127.0.0.1:46357"
-//     tls:
-//       insecure: true # local demo only
+//     endpoint: "grpc://slim-gateway:46357"
 //     # optional: tls, auth, backoff, etc. (slim_config::ClientConfig)
 //   app:
-//     name: "org/demo/cli"
+//     name: "org/namespace/agent"
 //     identity_provider:
 //       type: shared_secret
 //       id: "my-id"
-//       data: "slimrpc-local-demo-secret-at-least-32-bytes"
+//       data: "secret"
 //     identity_verifier:
 //       type: shared_secret
 //       id: "my-id"
-//       data: "slimrpc-local-demo-secret-at-least-32-bytes"
+//       data: "secret"
 
 #[derive(Debug, Deserialize)]
 pub struct PluginConfig {
@@ -129,7 +127,20 @@ mod tests {
 
     use super::*;
 
-    const VALID_CONFIG_YAML: &str = include_str!("../../examples/plugin.yaml");
+    const VALID_CONFIG_YAML: &str = r#"
+client:
+  endpoint: "grpc://slim-gateway:46357"
+app:
+  name: "org/namespace/agent"
+  identity_provider:
+    type: shared_secret
+    id: "my-id"
+    data: "secret"
+  identity_verifier:
+    type: shared_secret
+    id: "my-id"
+    data: "secret"
+"#;
 
     /// A scratch file under the OS temp dir, removed on drop. Avoids adding
     /// a `tempfile` dependency for what's otherwise a one-line write+read.
@@ -157,7 +168,7 @@ mod tests {
     fn test_load_config_parses_the_documented_example() {
         let file = ScratchFile::new("a2acli-slimrpc-test-valid.yaml", VALID_CONFIG_YAML);
         let config = load_config(file.path()).unwrap();
-        assert_eq!(config.app.name, "org/demo/cli");
+        assert_eq!(config.app.name, "org/namespace/agent");
     }
 
     #[test]
