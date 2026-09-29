@@ -8,8 +8,8 @@ app:
   identity_provider:
     type: shared_secret
     id: "demo-client"
-    data: "slimrpc-local-demo-secret-at-least-32-bytes"
+    data: "my_shared_secret_for_testing_purposes_only"
   identity_verifier:
     type: shared_secret
     id: "demo-client"
-    data: "slimrpc-local-demo-secret-at-least-32-bytes"
+    data: "my_shared_secret_for_testing_purposes_only"

@@ -165,7 +165,6 @@ dependencies = [
  "agntcy-slim-auth",
  "agntcy-slim-config",
  "agntcy-slim-datapath",
- "agntcy-slim-rpc",
  "agntcy-slim-service",
  "async-trait",
  "clap",
