@@ -235,7 +235,10 @@ async fn run_with_config(endpoint: &str, config: PluginConfig) -> Result<(), Plu
 
     // 4. Build SLIM Service + connect to gateway
     let kind = ServiceBuilder::kind();
-    let id = slim_config::component::id::ID::new_with_name(kind, &config.app.name)
+    // A component name cannot contain '/', unlike the SLIM application name.
+    // The component is local to this plugin process; app.name remains the
+    // routing identity passed to create_app below.
+    let id = slim_config::component::id::ID::new_with_name(kind, "a2a-cli-plugin")
         .map_err(|e| PluginError::Slim(format!("invalid service ID: {e}")))?;
     let service = Service::new(id);
 
@@ -251,6 +254,13 @@ async fn run_with_config(endpoint: &str, config: PluginConfig) -> Result<(), Plu
         .create_app(&app_name, provider, verifier)
         .map_err(|e| PluginError::Slim(format!("create_app failed: {e}")))?;
     let slim_app = Arc::new(slim_app);
+
+    // create_app subscribes locally. Propagate the client name to the gateway
+    // so the remote agent can route session handshake replies back to us.
+    slim_app
+        .subscribe(&app_name, Some(conn_id))
+        .await
+        .map_err(|e| PluginError::Slim(format!("subscribe failed: {e}")))?;
 
     let transport = SlimRpcTransport::new_with_connection(slim_app, remote, Some(conn_id));
 
@@ -745,6 +755,12 @@ mod tests {
             r#"
 client:
   endpoint: "{client_endpoint}"
+  tls:
+    insecure: true
+  backoff:
+    type: fixed_interval
+    interval: 1ms
+    max_attempts: 0
 app:
   name: "org/namespace/agent"
   identity_provider:
@@ -784,10 +800,17 @@ app:
     async fn test_run_with_config_reports_a_connect_failure_for_an_unreachable_gateway() {
         let port = closed_local_port();
         let config = minimal_config(&format!("http://127.0.0.1:{port}"));
-        let err = run_with_config("org/namespace/agent", config)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, PluginError::Slim(_)));
+        let err = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run_with_config("org/namespace/agent", config),
+        )
+        .await
+        .expect("the closed gateway port should fail promptly")
+        .unwrap_err();
+        assert!(
+            matches!(&err, PluginError::Slim(message) if message.starts_with("SLIM gateway connect failed:")),
+            "a valid app identity must reach the gateway connection attempt: {err}"
+        );
     }
 
     #[tokio::test]
