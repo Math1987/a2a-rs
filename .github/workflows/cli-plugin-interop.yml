@@ -37,8 +37,8 @@ jobs:
         with:
           cache-save-if: false
 
-      - name: Build the slimrpc transport plugin
-        run: cargo build -p a2acli-transport-slimrpc --locked
+      - name: Build the slimrpc transport plugin and echo agent
+        run: cargo build -p a2acli-transport-slimrpc --bins --examples --locked
 
       - name: Download the a2a-cli release binary
         env:
@@ -62,7 +62,7 @@ jobs:
         # `a2a transport list` launches every plugin's `info` subcommand and
         # renders its metadata as a table; the plugin never needs a SLIM
         # gateway for this. Real slimrpc/1.0.0 metadata surfacing through the
-        # real a2a-cli binary is the actual thing this job proves.
+        # real a2a-cli binary verifies discovery before the live gateway check.
         run: |
           a2a transport list | tee transport-list.txt
           grep -qE '^slimrpc\s' transport-list.txt
@@ -79,7 +79,7 @@ jobs:
         # PASSES when it fails with the right message -- the "Error: ..."
         # line below is the expected assertion target, not a build failure.
         run: |
-          echo "::notice::The following 'a2a send' failure is expected -- no SLIM gateway is configured in this job. This step passes if the error names A2A_SLIMRPC_PLUGIN_CONFIG (our real cause), and fails if it doesn't (e.g. a regression to a generic EOF)."
+          echo "::notice::The following 'a2a send' failure is expected -- the plugin configuration is intentionally unset in this step. This step passes if the error names A2A_SLIMRPC_PLUGIN_CONFIG (our real cause), and fails if it doesn't (e.g. a regression to a generic EOF)."
           set +e
           output=$(a2a send --transport slimrpc --endpoint org/namespace/agent "hello" 2>&1)
           exit_code=$?
@@ -87,3 +87,49 @@ jobs:
           echo "$output"
           [ "$exit_code" -ne 0 ]
           echo "$output" | grep -q 'A2A_SLIMRPC_PLUGIN_CONFIG'
+
+      - name: Send unary and streaming messages through a real SLIM gateway
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          gateway_id=""
+          echo_pid=""
+          echo_log="$RUNNER_TEMP/slimrpc-echo.log"
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              [ -z "$gateway_id" ] || docker logs "$gateway_id" || true
+              [ ! -f "$echo_log" ] || cat "$echo_log"
+            fi
+            if [ -n "$echo_pid" ]; then
+              kill "$echo_pid" 2>/dev/null || true
+              wait "$echo_pid" 2>/dev/null || true
+            fi
+            [ -z "$gateway_id" ] || docker rm -f "$gateway_id" >/dev/null || true
+          }
+          trap cleanup EXIT
+
+          gateway_id=$(docker run -d --rm \
+            -p 127.0.0.1:46357:46357 \
+            -v "$PWD/a2acli-transport-slimrpc/examples/slim-gateway.yaml:/config.yaml:ro" \
+            ghcr.io/agntcy/slim:2.3.0 /slim --config /config.yaml)
+          timeout 30s bash -c 'until echo >/dev/tcp/127.0.0.1/46357; do sleep 1; done' 2>/dev/null
+
+          target/debug/examples/echo-server >"$echo_log" 2>&1 &
+          echo_pid=$!
+          for attempt in {1..30}; do
+            kill -0 "$echo_pid"
+            if grep -q 'Echo agent ready at org/demo/echo' "$echo_log"; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'Echo agent ready at org/demo/echo' "$echo_log"
+
+          export A2A_SLIMRPC_PLUGIN_CONFIG="$PWD/a2acli-transport-slimrpc/examples/plugin.yaml"
+          timeout 30s a2a send --transport slimrpc --endpoint slim://org/demo/echo \
+            "hello over SLIMRPC" | tee "$RUNNER_TEMP/slimrpc-unary.txt"
+          grep -Fq 'Echo: hello over SLIMRPC' "$RUNNER_TEMP/slimrpc-unary.txt"
+          timeout 30s a2a send --stream --transport slimrpc --endpoint slim://org/demo/echo \
+            "hello stream" | tee "$RUNNER_TEMP/slimrpc-stream.txt"
+          grep -Fq 'Echo: hello stream' "$RUNNER_TEMP/slimrpc-stream.txt"
