@@ -1,0 +1,15 @@
+# Local demonstration only: replace these credentials for your deployment.
+client:
+  endpoint: "http://127.0.0.1:46357"
+  tls:
+    insecure: true
+app:
+  name: "org/demo/cli"
+  identity_provider:
+    type: shared_secret
+    id: "demo-client"
+    data: "slimrpc-local-demo-secret-at-least-32-bytes"
+  identity_verifier:
+    type: shared_secret
+    id: "demo-client"
+    data: "slimrpc-local-demo-secret-at-least-32-bytes"
